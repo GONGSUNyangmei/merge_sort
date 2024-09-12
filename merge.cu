@@ -243,7 +243,7 @@ void merge_pass(int in, int out, int block_num ,int thread_num, int * offset_inf
 }
 
 
-int merge_main(string fpath1, string fpath2, int entry_num, int block_size, int thread_num) {
+int merge_main(string fpath1, string fpath2, unsigned long long entry_num, unsigned long long block_size, int thread_num) {
 
     // phase 1: sort each block size data in memory 
 
@@ -286,5 +286,13 @@ int merge_main(string fpath1, string fpath2, int entry_num, int block_size, int 
             merge_pass(fd_2, fd_1, block_num_odd, thread_num, offset_info_odd, entrynum_info_odd,block_size);
         }
     }
+    return 0;
+}
+
+int main(void)
+{
+    string s1="/home/szy/ssd1/testfile1";
+    string s2="/home/szy/ssd1/testfile2";
+    merge_main(s1,s2,4UL*1024*1024*1024,2UL*1024*1024*1024,128);
     return 0;
 }
