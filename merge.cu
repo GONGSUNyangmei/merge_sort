@@ -1,11 +1,15 @@
 #include <iostream>
 #include <math.h>
+#include <unistd.h>
+#include <string>
+#include <fcntl.h>
 
-void block_sort(FILE* in,  int file_offset , int block_size, int thread_num) {
+using namespace std;
+void block_sort(int in,  int file_offset , int block_size, int thread_num) {
     // read data from input file
-    void* tmp_buffer = malloc(block_size * sizeof(int));
+    int* tmp_buffer = (int * )malloc(block_size * sizeof(int));
     pread(in, tmp_buffer, block_size * sizeof(int), file_offset);
-    void *devPtr;
+    //void *devPtr;
     //cudaMalloc(&devPtr, block_size * sizeof(int));
     //cudaMemcpy(devPtr, tmp_buffer, block_size * sizeof(int), cudaMemcpyHostToDevice);
     // sort data in memory
@@ -15,13 +19,12 @@ void block_sort(FILE* in,  int file_offset , int block_size, int thread_num) {
     }
     // write sorted data to output file
     //cudaMemcpy(tmp_buffer, devPtr, block_size * sizeof(int), cudaMemcpyDeviceToHost);
-    pwrite(out, tmp_buffer, block_size * sizeof(int), file_offset);
+    pwrite(in, tmp_buffer, block_size * sizeof(int), file_offset);
     free(tmp_buffer);
-
 }
 
 //* this function use binary search to find the partition index in the second file
-void binary_find_partition_index(FILE* in, int partitial_num, int* partitial_value, int offset, int entry_num , int * partitial_index, int* partitial_num2){
+void binary_find_partition_index(int in, int partitial_num, int* partitial_value, int offset, int entry_num , int * partitial_index, int* partitial_num2){
     int cursor_num = partitial_num*2  ;
     int* cursor_value = (int*)malloc(cursor_num * sizeof(int));
     int* cursor_index = (int*)malloc(cursor_num * sizeof(int));
@@ -72,7 +75,7 @@ __global__
 void merge_kernel(int** a, int** b, int** c, int* left_num_1, int* left_num_2, int* dest_num)
 {
     int block_id = blockIdx.x; //todo need to be checked
-    int start_offset = blockIdx.x * blockDim.x + threadIdx.x;  //todo need to be checked
+    //int start_offset = blockIdx.x * blockDim.x + threadIdx.x;  //todo need to be checked
     int index_1 =0;
     int index_2 =0;
     int index_3 =0;
@@ -108,7 +111,7 @@ void merge_kernel(int** a, int** b, int** c, int* left_num_1, int* left_num_2, i
     dest_num[block_id] = index_3;
 }
 
-void parallel_merge(FILE* in, FILE* out, int fetch_num, int thread_num, int* partitial_index1,int* partitial_index2,int* partitial_num1 ,int* partitial_num2 ,int partitial_num,int offset ) {
+void parallel_merge(int in, int  out, int fetch_num, int thread_num, int* partitial_index1,int* partitial_index2,int* partitial_num1 ,int* partitial_num2 ,int partitial_num,int offset ) {
     int ** p_tmpbuffer1 = (int**)malloc(partitial_num * sizeof(int*));
     for(int i = 0; i < partitial_num; i++) {
         p_tmpbuffer1[i] = (int*)malloc(fetch_num * sizeof(int));
@@ -208,7 +211,7 @@ void parallel_merge(FILE* in, FILE* out, int fetch_num, int thread_num, int* par
 
 }
 
-void merge_two(FILE* in, FILE* out, int block_size, int thread_num, int offset1, int offset2, int entry_num1, int entry_num2) {
+void merge_two(int in, int out, int block_size, int thread_num, int offset1, int offset2, int entry_num1, int entry_num2) {
     // find partitial value in a
     int partitial_num = thread_num -1;
     int* partitial_value = (int*)malloc(partitial_num * sizeof(int));
@@ -230,7 +233,7 @@ void merge_two(FILE* in, FILE* out, int block_size, int thread_num, int offset1,
 
 }
 
-void merge_pass(FILE* in, FILE* out, int block_num int thread_num, int * offset_info, int * entrynum_info, int block_size) {
+void merge_pass(int in, int out, int block_num ,int thread_num, int * offset_info, int * entrynum_info, int block_size) {
     // read data from input file
     int merge_block_num = block_num  / 2;    //* if not the exponent of 2, the last block will be merged with the last block
     
@@ -240,17 +243,21 @@ void merge_pass(FILE* in, FILE* out, int block_num int thread_num, int * offset_
 }
 
 
-int merge_main(FILE* in1, FILE* out, int entry_num, int block_size, int thread_num) {
+int merge_main(string fpath1, string fpath2, int entry_num, int block_size, int thread_num) {
 
     // phase 1: sort each block size data in memory 
 
+    int fd_1;
+    fd_1 = open(fpath1.c_str(), O_RDWR, 0);
+    int fd_2;
+    fd_2 = open(fpath2.c_str(),O_RDWR, 0);
     int block_num = (entry_num + block_size -1 )/block_size;
     for(int i = 0; i < block_num; i++) {
         if(i == block_num - 1) {
-            block_sort(in1, i * block_size * sizeof(int), entry_num - i * block_size, thread_num);
+            block_sort(fd_1, i * block_size * sizeof(int), entry_num - i * block_size, thread_num);
         }
         else {
-            block_sort(in1, i * block_size * sizeof(int), block_size, thread_num);
+            block_sort(fd_1, i * block_size * sizeof(int), block_size, thread_num);
         }
     }
     
@@ -267,17 +274,17 @@ int merge_main(FILE* in1, FILE* out, int entry_num, int block_size, int thread_n
     entrynum_info_even[block_num - 1] = entry_num - (block_num - 1) * block_size;
     int block_num_even = block_num;
     int block_num_odd ;
-    int block_size; //todo need to be calculated
+    //int block_size; //todo need to be calculated
     int pass_num = floor(log2(block_num));
     for(int i=0; i<pass_num; i++) {
         if(i % 2 == 0) {
             block_num_odd = block_num_even / 2;
-            merge_pass(in1, out, block_num_even, thread_num, offset_info_even, entrynum_info_even,block_size);
+            merge_pass(fd_1, fd_2, block_num_even, thread_num, offset_info_even, entrynum_info_even,block_size);
         }
         else {
             block_num_even = block_num_odd / 2;
-            merge_pass(out, in1, block_num_odd, thread_num, offset_info_odd, entrynum_info_odd,block_size);
+            merge_pass(fd_2, fd_1, block_num_odd, thread_num, offset_info_odd, entrynum_info_odd,block_size);
         }
     }
-    
+    return 0;
 }
