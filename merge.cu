@@ -6,13 +6,15 @@ void block_sort(FILE* in,  int file_offset , int block_size, int thread_num) {
     void* tmp_buffer = malloc(block_size * sizeof(int));
     pread(in, tmp_buffer, block_size * sizeof(int), file_offset);
     void *devPtr;
-    cudaMalloc(&devPtr, block_size * sizeof(int));
-    cudaMemcpy(devPtr, tmp_buffer, block_size * sizeof(int), cudaMemcpyHostToDevice);
+    //cudaMalloc(&devPtr, block_size * sizeof(int));
+    //cudaMemcpy(devPtr, tmp_buffer, block_size * sizeof(int), cudaMemcpyHostToDevice);
     // sort data in memory
 
-
+    for(int i = 0; i < block_size; i++) {
+        tmp_buffer[i] = i;
+    }
     // write sorted data to output file
-    cudaMemcpy(tmp_buffer, devPtr, block_size * sizeof(int), cudaMemcpyDeviceToHost);
+    //cudaMemcpy(tmp_buffer, devPtr, block_size * sizeof(int), cudaMemcpyDeviceToHost);
     pwrite(out, tmp_buffer, block_size * sizeof(int), file_offset);
     free(tmp_buffer);
 
