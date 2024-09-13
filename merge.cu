@@ -3,24 +3,83 @@
 #include <unistd.h>
 #include <string>
 #include <fcntl.h>
+#include <random>
 
 using namespace std;
-void block_sort(int in,  int file_offset , int block_size, int thread_num) {
+
+int check_result(int fd,unsigned long long entry_num )
+{
+    std::cout << "check result" << std::endl;
+    
+    // for(int i = 0; i < 10; i++) {
+    //     pread(fd, &value1, sizeof(int), i * sizeof(int));
+    //     std::cout << "fd [ "<< i << "] = "<<value1 <<std::endl;
+    // }
+    unsigned long long tmp;
+    pread(fd, &tmp, sizeof(int), (1742863087UL)*sizeof(int));
+    cout<< "value [ 1742863087]  "<<tmp<<endl;
+    std::mt19937 generator;
+    for(unsigned long long i = 1; i < 1000; i++) {
+        unsigned long long value1;
+        unsigned long long value2;
+        unsigned long long index1 = generator()%(entry_num -1 ); 
+        unsigned long long index2 = generator()%(index1 ); 
+        pread(fd, &value1, sizeof(int), (index1)*sizeof(int));
+        pread(fd, &value2, sizeof(int), (index2)*sizeof(int));
+        if(value2 > value1) {
+            cout << "error" << endl;
+            std::cout << "value [ "<<index1 <<"] = " << value1 <<std::endl;
+            std::cout << "value [ "<<index2   <<"] = " << value2 <<std::endl;
+            return -1;
+        }
+        value1 = value2;
+    }
+    std::cout << " =========== check pass ============ "<< std::endl;
+    return 0;
+}
+
+
+
+
+void block_sort(int in,  unsigned long long file_offset , unsigned long long block_size, int thread_num) {
     // read data from input file
+    
     int* tmp_buffer = (int * )malloc(block_size * sizeof(int));
+    std::cout << " block_size  :"<< block_size  <<std::endl;
+    std::cout << " file_offset :"<< file_offset << std::endl;
     pread(in, tmp_buffer, block_size * sizeof(int), file_offset);
     //void *devPtr;
     //cudaMalloc(&devPtr, block_size * sizeof(int));
     //cudaMemcpy(devPtr, tmp_buffer, block_size * sizeof(int), cudaMemcpyHostToDevice);
     // sort data in memory
-
+    ssize_t return_value;
     for(int i = 0; i < block_size; i++) {
-        tmp_buffer[i] = i;
+        tmp_buffer[i] = i/1024;
     }
-    // write sorted data to output file
-    //cudaMemcpy(tmp_buffer, devPtr, block_size * sizeof(int), cudaMemcpyDeviceToHost);
-    pwrite(in, tmp_buffer, block_size * sizeof(int), file_offset);
+    return_value = pwrite(in, tmp_buffer, block_size * sizeof(int), file_offset);
+    std::cout << " write size : " << block_size * sizeof(int) << endl;
+    std::cout << " pwrite return value : "<< return_value<<endl;
+    for(int i = 0; i < block_size; i++) {
+        int  tmp;
+        return_value = pread(in, &tmp, sizeof(int), i*sizeof(int));
+        if(return_value != sizeof(int))
+            std::cout << " pread return value : "<< return_value<<endl;
+        if(tmp_buffer[i]!=tmp)
+        {
+            cout<< "start enequal!!! at "<<i<<endl;
+            break;
+        }
+        
+    }
+    // cout<< "value [ 1742863087]  "<<tmp_buffer[1742863087]<<endl;
+    // // write sorted data to output file
+    // //cudaMemcpy(tmp_buffer, devPtr, block_size * sizeof(int), cudaMemcpyDeviceToHost);
+    
+    
+
+    // cout<< "value [ 1742863087]  "<<tmp<<endl;
     free(tmp_buffer);
+    check_result(in,2UL*1024*1024*1024);
 }
 
 //* this function use binary search to find the partition index in the second file
@@ -291,21 +350,7 @@ int merge_main(string fpath1, string fpath2, unsigned long long entry_num, unsig
     return 0;
 }
 
-int check_result(int fd,unsigned long long entry_num )
-{
-    std::cout << "check result" << std::endl;
-    int value1 = pread(fd, &value1, sizeof(int), 0);
-    for(unsigned long long i = 1; i < entry_num; i++) {
-        int value2;
-        pread(fd, &value2, sizeof(int), i * sizeof(int));
-        if(value2 < value1) {
-            cout << "error" << endl;
-            return -1;
-        }
-        value1 = value2;
-    }
-    return 0;
-}
+
 
 int main(void)
 {
