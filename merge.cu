@@ -286,6 +286,24 @@ int merge_main(string fpath1, string fpath2, unsigned long long entry_num, unsig
             merge_pass(fd_2, fd_1, block_num_odd, thread_num, offset_info_odd, entrynum_info_odd,block_size);
         }
     }
+    close(fd_1);
+    close(fd_2);
+    return 0;
+}
+
+int check_result(int fd,unsigned long long entry_num )
+{
+    std::cout << "check result" << std::endl;
+    int value1 = pread(fd, &value1, sizeof(int), 0);
+    for(unsigned long long i = 1; i < entry_num; i++) {
+        int value2;
+        pread(fd, &value2, sizeof(int), i * sizeof(int));
+        if(value2 < value1) {
+            cout << "error" << endl;
+            return -1;
+        }
+        value1 = value2;
+    }
     return 0;
 }
 
@@ -294,5 +312,7 @@ int main(void)
     string s1="/home/szy/ssd1/testfile1";
     string s2="/home/szy/ssd1/testfile2";
     merge_main(s1,s2,4UL*1024*1024*1024,2UL*1024*1024*1024,128);
+    int fd = open(s1.c_str(), O_RDWR, 0);
+    check_result(fd,4UL*1024*1024*1024);
     return 0;
 }
