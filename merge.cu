@@ -7,6 +7,20 @@
 
 using namespace std;
 
+int write_disk(int in, void* tmp_buffer , unsigned long long size , unsigned long long file_offset)
+{
+    unsigned long long left_size = size;
+    while(left_size > 0) {
+        ssize_t return_value;
+        return_value = pwrite(in, tmp_buffer, size, file_offset);
+        if(return_value < 0)
+            return return_value;
+        left_size -= return_value;
+        file_offset += return_value;
+    }
+    return size;
+}
+
 int check_result(int fd,unsigned long long entry_num )
 {
     std::cout << "check result" << std::endl;
@@ -56,7 +70,7 @@ void block_sort(int in,  unsigned long long file_offset , unsigned long long blo
     for(int i = 0; i < block_size; i++) {
         tmp_buffer[i] = i/1024;
     }
-    return_value = pwrite(in, tmp_buffer, block_size * sizeof(int), file_offset);
+    return_value = write_disk(in, tmp_buffer, block_size * sizeof(int), file_offset);
     std::cout << " write size : " << block_size * sizeof(int) << endl;
     std::cout << " pwrite return value : "<< return_value<<endl;
     for(int i = 0; i < block_size; i++) {
