@@ -7,16 +7,31 @@
 
 using namespace std;
 
-int write_disk(int in, void* tmp_buffer , unsigned long long size , unsigned long long file_offset)
+unsigned long long write_disk(int in, void* tmp_buffer , unsigned long long size , unsigned long long file_offset)
 {
+    unsigned long long buffer_bias =0;
     unsigned long long left_size = size;
+    char* buffer = (char*)tmp_buffer;
     while(left_size > 0) {
+        //std::cout<< "***************************"<<std::endl;
         ssize_t return_value;
-        return_value = pwrite(in, tmp_buffer, size, file_offset);
+        return_value = pwrite(in, buffer+buffer_bias, left_size, file_offset);
+        //std::cout << " pwrite return value : "<<return_value<<std::endl;
         if(return_value < 0)
+        {
+            int err = errno;
+            fprintf(stderr, "pwrite failed: %s\n", strerror(err));
+            
+            std::cout<< " has write : " << size- left_size<<std::endl;
+            std::cout << " left size : "<<left_size<<std::endl;
+            std::cout << " file offset : "<<file_offset<<std::endl;
             return return_value;
+        }
+        buffer_bias += return_value;
         left_size -= return_value;
         file_offset += return_value;
+        // std::cout << " left size : "<<left_size<<std::endl;
+        // std::cout << " file offset : "<<file_offset<<std::endl;
     }
     return size;
 }
@@ -31,7 +46,6 @@ int check_result(int fd,unsigned long long entry_num )
     // }
     unsigned long long tmp;
     pread(fd, &tmp, sizeof(int), (1742863087UL)*sizeof(int));
-    cout<< "value [ 1742863087]  "<<tmp<<endl;
     std::mt19937 generator;
     for(unsigned long long i = 1; i < 1000; i++) {
         unsigned long long value1;
@@ -52,15 +66,13 @@ int check_result(int fd,unsigned long long entry_num )
     return 0;
 }
 
-
-
-
 void block_sort(int in,  unsigned long long file_offset , unsigned long long block_size, int thread_num) {
     // read data from input file
     
     int* tmp_buffer = (int * )malloc(block_size * sizeof(int));
-    std::cout << " block_size  :"<< block_size  <<std::endl;
-    std::cout << " file_offset :"<< file_offset << std::endl;
+    //std::cout<< "buffer size : "<<block_size * sizeof(int) << std::endl;
+    //std::cout << " block_size  :"<< block_size  <<std::endl;
+    //std::cout << " file_offset :"<< file_offset << std::endl;
     pread(in, tmp_buffer, block_size * sizeof(int), file_offset);
     //void *devPtr;
     //cudaMalloc(&devPtr, block_size * sizeof(int));
@@ -70,22 +82,23 @@ void block_sort(int in,  unsigned long long file_offset , unsigned long long blo
     for(int i = 0; i < block_size; i++) {
         tmp_buffer[i] = i/1024;
     }
-    return_value = write_disk(in, tmp_buffer, block_size * sizeof(int), file_offset);
-    std::cout << " write size : " << block_size * sizeof(int) << endl;
-    std::cout << " pwrite return value : "<< return_value<<endl;
-    for(int i = 0; i < block_size; i++) {
-        int  tmp;
-        return_value = pread(in, &tmp, sizeof(int), i*sizeof(int));
-        if(return_value != sizeof(int))
-            std::cout << " pread return value : "<< return_value<<endl;
-        if(tmp_buffer[i]!=tmp)
-        {
-            cout<< "start enequal!!! at "<<i<<endl;
-            break;
-        }
+    return_value =  write_disk(in, tmp_buffer, block_size * sizeof(int), file_offset);
+    
+    //std::cout << " write size : " << block_size * sizeof(int) << endl;
+    //std::cout << " pwrite return value : "<< return_value<<endl;
+    // for(int i = 0; i < block_size; i++) {
+    //     int  tmp;
+    //     return_value = pread(in, &tmp, sizeof(int), i*sizeof(int));
+    //     if(return_value != sizeof(int))
+    //         std::cout << " pread return value : "<< return_value<<endl;
+    //     if(tmp_buffer[i]!=tmp)
+    //     {
+    //         cout<< "start enequal!!! at "<<i<<endl;
+    //         break;
+    //     }
         
-    }
-    // cout<< "value [ 1742863087]  "<<tmp_buffer[1742863087]<<endl;
+    // }
+    
     // // write sorted data to output file
     // //cudaMemcpy(tmp_buffer, devPtr, block_size * sizeof(int), cudaMemcpyDeviceToHost);
     
@@ -97,32 +110,42 @@ void block_sort(int in,  unsigned long long file_offset , unsigned long long blo
 }
 
 //* this function use binary search to find the partition index in the second file
-void binary_find_partition_index(int in, int partitial_num, int* partitial_value, int offset, int entry_num , int * partitial_index, int* partitial_num2){
+void binary_find_partition_index(int in, int partitial_num, int* partitial_value, unsigned long long offset, unsigned long long entry_num , unsigned long long * partitial_index, unsigned long long* partitial_num2){
     int cursor_num = partitial_num*2  ;
     int* cursor_value = (int*)malloc(cursor_num * sizeof(int));
-    int* cursor_index = (int*)malloc(cursor_num * sizeof(int));
-    for(int i = 0; i < cursor_num ; i++) {
+    unsigned long long* cursor_index = (unsigned long long*)malloc(cursor_num * sizeof(unsigned long long));
+    int return_value;
+    std::cout << " offset : "<< offset<<std::endl;
+    for(unsigned long long i = 0; i < cursor_num ; i++) {
         cursor_index[i] = i*entry_num/cursor_num;
-        pread(in, &cursor_value[i], sizeof(int), offset + cursor_index[i] * sizeof(int));
+        return_value = pread(in, &(cursor_value[i]), sizeof(int), offset + cursor_index[i] * sizeof(int));
+        // std::cout << " pread return value : "<<return_value<<std::endl;
+        //std::cout<< " cursor["<<i<<"] index : "<<cursor_index[i]<<" value: "<<cursor_value[i]<<std::endl;
     }
     //! need to be checked
-    int left = 0;
-    int right = entry_num - 1;
-    for(int i = 0; i < partitial_num -1; i++) {  // (partitial_num -1 ) partition points
+    unsigned long long left = 0;
+    unsigned long long right = entry_num - 1;
+    for(int i = 0; i < partitial_num ; i++) {  // (partitial_num -1 ) partition points
+        //std::cout<< " **************************\n partiton num : "<<i<<std::endl;
         for(int j = 0; j < cursor_num; j++) {
+            //std::cout<< " j= "<<j<<std::endl;
             if(partitial_value[i] <= cursor_value[j]) {
                 right = cursor_index[j];
                 if(i >0 && partitial_index[i-1] > left) {
                     left = partitial_index[i-1];
                 }
-                else {
+                else if(j>0){
                     left = cursor_index[j - 1];
+                }
+                else{
+                    left = 0;
                 }
                 break;
             }
         }
+        //std::cout<<" left : "<< left<<" right : "<<right<<std::endl;
         while(left < right) {
-            int mid = (left + right) / 2;
+            unsigned long long mid = (left + right) / 2;
             int mid_value ;
             pread(in, &mid_value, sizeof(int), offset + mid * sizeof(int));
             if(partitial_value[i] <= mid_value) {
@@ -131,7 +154,9 @@ void binary_find_partition_index(int in, int partitial_num, int* partitial_value
             else {
                 left = mid + 1;
             }
+            //std::cout<<" left : "<< left<<" right : "<<right<<std::endl;
         }
+        //getchar();
         partitial_index[i] =  left;
         if(i != 0) {
             partitial_num2[i-1] = partitial_index[i] - partitial_index[i-1];
@@ -184,7 +209,7 @@ void merge_kernel(int** a, int** b, int** c, int* left_num_1, int* left_num_2, i
     dest_num[block_id] = index_3;
 }
 
-void parallel_merge(int in, int  out, int fetch_num, int thread_num, int* partitial_index1,int* partitial_index2,int* partitial_num1 ,int* partitial_num2 ,int partitial_num,int offset ) {
+void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned long long thread_num, unsigned long long * partitial_index1,unsigned long long * partitial_index2,unsigned long long * partitial_num1 ,unsigned long long * partitial_num2 ,unsigned long long partitial_num,unsigned long long offset1,unsigned long long offset2,unsigned long long offset3 ) {
     int ** p_tmpbuffer1 = (int**)malloc(partitial_num * sizeof(int*));
     for(int i = 0; i < partitial_num; i++) {
         p_tmpbuffer1[i] = (int*)malloc(fetch_num * sizeof(int));
@@ -216,6 +241,8 @@ void parallel_merge(int in, int  out, int fetch_num, int thread_num, int* partit
     }
     int * destbuffer_num = (int*)malloc(partitial_num * sizeof(int));
     for(int i = 0; ; i++) { // merge two block
+        std::cout << "********************" << std::endl;
+        std::cout<< " parrallel i: "<< i <<std::endl;
         bool flag = false;
         for(int j = 0; j < partitial_num; j++) {
             if(left_num_1[j] > 0 || left_num_2[j] > 0 || tmpbuffer1_left[j] > 0 || tmpbuffer2_left[j] > 0) {
@@ -226,32 +253,37 @@ void parallel_merge(int in, int  out, int fetch_num, int thread_num, int* partit
             break;
         }
         //* phase 1: read data from input file to each tmp buffer
+        std:: cout <<  " pahse 1 "<< std::endl;
         for(int j = 0; j < partitial_num; j++) {
             if(left_num_1[j] > 0 && tmpbuffer1_left[j] == 0) {
                 int read_num = (left_num_1[j] > fetch_num) ? fetch_num : left_num_1[j];
-                pread(in, p_tmpbuffer1[j], read_num * sizeof(int), offset + partitial_index1[j] * sizeof(int));
+                pread(in, p_tmpbuffer1[j], read_num * sizeof(int), offset1 + partitial_index1[j] * sizeof(int));
                 left_num_1[j] -= read_num;
                 tmpbuffer1_left[j] = read_num;
             }
             if(left_num_2[j] > 0 && tmpbuffer2_left[j] == 0) {
                 int read_num = (left_num_2[j] > fetch_num) ? fetch_num : left_num_2[j];
-                pread(in, p_tmpbuffer2[j], read_num * sizeof(int), offset + partitial_index2[j] * sizeof(int));
+                pread(in, p_tmpbuffer2[j], read_num * sizeof(int), offset2 + partitial_index2[j] * sizeof(int));
                 left_num_2[j] -= read_num;
                 tmpbuffer2_left[j] = read_num;
             }
         }
         //* phase 2: use gpu kernels parallel merge data in memory and move the unsorted data from back to front
-        
-        int** devPtr1;
-        int** devPtr2;
-        int** devPtr3;
+        std:: cout<< " phase 2 "<<std::endl;
+        int** devPtr1 = (int**)malloc(partitial_num* sizeof(int*));
+        int** devPtr2  = (int**)malloc(partitial_num* sizeof(int*));
+        int** devPtr3  = (int**)malloc(partitial_num* sizeof(int*));
         for(int j = 0; j < partitial_num; j++) {
+            std::cout << j << std::endl;
             cudaMalloc(&devPtr1[j], fetch_num * sizeof(int));
             cudaMalloc(&devPtr2[j], fetch_num * sizeof(int));
             cudaMalloc(&devPtr3[j], 2*fetch_num * sizeof(int));
+            std::cout << " cumemcpy 1"<< std::endl;
             cudaMemcpy(devPtr1[j], p_tmpbuffer1[j], fetch_num * sizeof(int), cudaMemcpyHostToDevice);
+            std::cout << " cumemcpy 2"<< std::endl;
             cudaMemcpy(devPtr2[j], p_tmpbuffer2[j], fetch_num * sizeof(int), cudaMemcpyHostToDevice);
         }
+        std::cout << " point "<< std::endl;
         int* devPtr4;
         int* devPtr5;
         int* devPtr6;
@@ -261,7 +293,10 @@ void parallel_merge(int in, int  out, int fetch_num, int thread_num, int* partit
         cudaMemcpy(devPtr4, left_num_1, partitial_num * sizeof(int), cudaMemcpyHostToDevice);
         cudaMemcpy(devPtr5, left_num_2, partitial_num * sizeof(int), cudaMemcpyHostToDevice);
         cudaMemcpy(devPtr6, destbuffer_num, partitial_num * sizeof(int), cudaMemcpyHostToDevice);
+        std:;cout << " kernel start " << std::endl;
         merge_kernel<<<partitial_num, fetch_num>>>(devPtr1, devPtr2, devPtr3, devPtr4, devPtr5, devPtr6);
+
+        std:: cout << " kernel complete "<< std::endl;
         for(int j = 0; j < partitial_num; j++) {
             cudaMemcpy(p_tmpbuffer1[j], devPtr1[j], fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
             cudaMemcpy(p_tmpbuffer2[j], devPtr2[j], fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
@@ -272,11 +307,11 @@ void parallel_merge(int in, int  out, int fetch_num, int thread_num, int* partit
         }
         
         
-        
+        std::cout << " phase 3 " <<std::endl;
         //* phase 3: write data to output file 
         for(int j = 0; j < partitial_num; j++) {
             if(destbuffer_num[j] > 0) {
-                pwrite(out, p_destbuffer[j], destbuffer_num[j] * sizeof(int), offset + partitial_index1[j] * sizeof(int));
+                pwrite(out, p_destbuffer[j], destbuffer_num[j] * sizeof(int), offset3 + partitial_index1[j] * sizeof(int));
                 partitial_index1[j] += destbuffer_num[j];
             }
         }
@@ -284,34 +319,52 @@ void parallel_merge(int in, int  out, int fetch_num, int thread_num, int* partit
 
 }
 
-void merge_two(int in, int out, int block_size, int thread_num, int offset1, int offset2, int entry_num1, int entry_num2) {
+void merge_two(int in, int out, int block_size, int thread_num, unsigned long long offset1, unsigned long long offset2,unsigned long long offset3, unsigned long long entry_num1, unsigned long long entry_num2) {
+    std::cout << " offset1: "<<offset1<<std::endl;
+    std::cout << " offset2: "<<offset2<<std::endl;
+    std::cout << " entry_num1: "<< entry_num1<< std::endl;
+    std::cout << " entry_num2: "<< entry_num2<< std::endl;
     // find partitial value in a
-    int partitial_num = thread_num -1;
+    int partitial_num = thread_num ;
     int* partitial_value = (int*)malloc(partitial_num * sizeof(int));
-    int* partitial_index1 = (int*)malloc(partitial_num * sizeof(int));
-    int* partitial_index2 = (int*)malloc(partitial_num * sizeof(int));
-    int* partitial_num1 = (int*)malloc(partitial_num * sizeof(int));
-    int* partitial_num2 = (int*)malloc(partitial_num * sizeof(int));
-    for(int i = 0; i < partitial_num; i++) {
+    unsigned long long* partitial_index1 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long* partitial_index2 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long* partitial_num1 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long* partitial_num2 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    for(unsigned long long i = 0; i < partitial_num; i++) {
         partitial_index1[i] = i * entry_num1 / partitial_num;
         partitial_value[i] = 0;
-        pread(in, &partitial_value[i], sizeof(int), offset1 + partitial_index1[i] * sizeof(int));
-        partitial_num1[i] = (i == partitial_num - 1) ? entry_num1 - partitial_index1[i] : partitial_index1[i+1] - partitial_index1[i];
+        pread(in, &(partitial_value[i]), sizeof(int), offset1 + partitial_index1[i] * sizeof(int));
+        if(i!= 0)
+            partitial_num1[i-1] =  partitial_index1[i] - partitial_index1[i-1];
+        if(i == partitial_num - 1)
+            partitial_num1[i] = entry_num1 - partitial_index1[i] ;
     }
     // find partitial index in b
     binary_find_partition_index(in, partitial_num, partitial_value, offset2, entry_num2, partitial_index2, partitial_num2);
-    // read data from input file
-
-    // merge two sorted data in memory
+    // std::cout<< "partitial_num : " << partitial_num <<std::endl;
+    // for(int i=0;i<partitial_num;i++)
+    // {
+    //     std::cout << " partitial_index1["<<i<<"]: "<<partitial_index1[i]<<"  num: "<<partitial_num1[i]<<std::endl;
+    // }
+    // std::cout<<"=================================="<<std::endl;
+    // for(int i=0;i<partitial_num;i++)
+    // {
+    //     std::cout << " partitial_index1["<<i<<"]: "<<partitial_index1[i]<<" partitial_index2["<<i<<"]: "<<partitial_index2[i]<<"  num: "<<(int)(partitial_index2[i]-partitial_index1[i])<<std::endl;
+    // }
+    unsigned long long fetch_num = 16UL*1024*1024;
+    parallel_merge(in,out,fetch_num,thread_num,partitial_index1, partitial_index2, partitial_num1 , partitial_num2 , partitial_num,offset1,offset2,offset3 );
+    
 
 }
 
-void merge_pass(int in, int out, int block_num ,int thread_num, int * offset_info, int * entrynum_info, int block_size) {
+void merge_pass(int in, int out, int block_num ,int thread_num, unsigned long long * offset_info, unsigned long long * out_offset_info,unsigned long long * entrynum_info, int block_size) {
     // read data from input file
     int merge_block_num = block_num  / 2;    //* if not the exponent of 2, the last block will be merged with the last block
     
     for(int i = 0; i < merge_block_num; i++) {
-        merge_two(in, out, block_size, thread_num, offset_info[2*i], offset_info[2*i+1], entrynum_info[2*i], entrynum_info[2*i+1]);
+        std::cout<<"merge_block_num : "<<i<< std::endl;
+        merge_two(in, out, block_size, thread_num, offset_info[2*i], offset_info[2*i+1],out_offset_info[i], entrynum_info[2*i], entrynum_info[2*i+1]);
     }
 }
 
@@ -335,13 +388,15 @@ int merge_main(string fpath1, string fpath2, unsigned long long entry_num, unsig
     }
     
     //phase 2: merge sorted data
-    int offset_info_even[block_num];
-    int offset_info_odd[block_num];
-    int entrynum_info_even[block_num];
-    int entrynum_info_odd[block_num];
+    unsigned long long offset_info_even[block_num];
+    unsigned long long offset_info_odd[block_num];
+    unsigned long long entrynum_info_even[block_num];
+    unsigned long long entrynum_info_odd[block_num];
     for(int i = 0; i < block_num -1; i++) {
         offset_info_even[i] = i * block_size * sizeof(int);
         entrynum_info_even[i] = block_size;
+        std::cout<< "offset_info_even [" <<i<<"] : "<<offset_info_even[i]<< std::endl;
+        std::cout<< "entrynum_info_even [" <<i<<"] : "<<entrynum_info_even[i]<< std::endl;
     }
     offset_info_even[block_num - 1] = (block_num - 1) * block_size * sizeof(int);
     entrynum_info_even[block_num - 1] = entry_num - (block_num - 1) * block_size;
@@ -349,14 +404,36 @@ int merge_main(string fpath1, string fpath2, unsigned long long entry_num, unsig
     int block_num_odd ;
     //int block_size; //todo need to be calculated
     int pass_num = floor(log2(block_num));
+    std::cout<<" total merge pass : "<<pass_num<<std::endl;
     for(int i=0; i<pass_num; i++) {
+        std::cout<<"merge pass : "<<i<<std::endl;
         if(i % 2 == 0) {
-            block_num_odd = block_num_even / 2;
-            merge_pass(fd_1, fd_2, block_num_even, thread_num, offset_info_even, entrynum_info_even,block_size);
+            block_num_odd = (block_num_even +1) / 2;
+            for(int j=0;j<block_num_odd;j++){
+                offset_info_odd[j] = offset_info_even[2*j];
+                if(j == block_num_odd-1 && block_num_even < block_num_odd*2){
+                    entrynum_info_odd[j] = entrynum_info_even[2*j] ;
+                }
+                else{
+                    entrynum_info_odd[j] = entrynum_info_even[2*j+1] + entrynum_info_even[2*j];
+                }
+                
+            }
+            merge_pass(fd_1, fd_2, block_num_even, thread_num, offset_info_even,offset_info_odd, entrynum_info_even,block_size);
         }
         else {
-            block_num_even = block_num_odd / 2;
-            merge_pass(fd_2, fd_1, block_num_odd, thread_num, offset_info_odd, entrynum_info_odd,block_size);
+            block_num_even = (block_num_odd +1) / 2;
+            for(int j=0;j<block_num_odd;j++){
+                offset_info_even[j] = offset_info_odd[2*j];
+                if(j == block_num_even-1 && block_num_odd < block_num_even*2){
+                    entrynum_info_even[j] = entrynum_info_odd[2*j] ;
+                }
+                else{
+                    entrynum_info_even[j] = entrynum_info_odd[2*j] + entrynum_info_odd[2*j+1];
+                }
+                
+            }
+            merge_pass(fd_2, fd_1, block_num_odd, thread_num, offset_info_odd,offset_info_even, entrynum_info_odd,block_size);
         }
     }
     close(fd_1);
