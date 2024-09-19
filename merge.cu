@@ -170,43 +170,53 @@ void binary_find_partition_index(int in, int partitial_num, int* partitial_value
 }
 
 __global__
-void merge_kernel(int** a, int** b, int** c, int* left_num_1, int* left_num_2, int* dest_num)
+void merge_kernel(int** a, int** b, int** c, unsigned long long* left_num_1, unsigned long long* left_num_2, unsigned long long* dest_num)
 {
-    int block_id = blockIdx.x; //todo need to be checked
-    //int start_offset = blockIdx.x * blockDim.x + threadIdx.x;  //todo need to be checked
-    int index_1 =0;
-    int index_2 =0;
-    int index_3 =0;
+    //printf(" start kernel \n");
+    const int bid = blockIdx.x;
+    const int tid = threadIdx.x;
+    int id = bid*32+tid;
+    printf("Hello World from block %d and thread %d!\n", bid, tid);
+    printf("left_num_1 : %llu , left_num_2 : %llu \n",left_num_1[id],left_num_2[id]);
+    // int block_id = blockIdx.x; //todo need to be checked
+    // //int start_offset = blockIdx.x * blockDim.x + threadIdx.x;  //todo need to be checked
+    unsigned long long index_1 =0;
+    unsigned long long index_2 =0;
+    unsigned long long index_3 =0;
     while(1){
-        if(a[block_id][index_1] <= b[block_id][index_2]) {
-            c[block_id][index_3] = a[block_id][index_1];
+        if(a[id][index_1] <= b[id][index_2]) {
+            c[id][index_3] = a[id][index_1];
+            // printf("a[%d][%llu]  = %d \n ",id,index_1,a[id][index_1]);
+            // printf("b[%d][%llu]  \n ",id,index_2);
             index_1++;
             index_3++;
         }
         else {
-            c[block_id][index_3] = b[block_id][index_2];
+            c[id][index_3] = b[id][index_2];
             index_2++;
             index_3++;
         }
         //* judge when to escape : if a or b is empty
-        if(index_1 == left_num_1[block_id] || index_2 == left_num_2[block_id] ) {
+        if(index_1 == left_num_1[id]  || index_2 == left_num_2[id]  ) {
             //* move the rest of the data to the front
-            if(index_1 == left_num_1[block_id]) {
-                for(int i = 0; i < left_num_2[block_id] - index_2; i++) {
-                    b[block_id][i] = b[block_id][i+ index_2];
+            if(index_1 == left_num_1[id]) {
+                for(int i = 0; i < left_num_2[id] - index_2; i++) {
+                    b[id][i] = b[id][i+ index_2];
                 }
             }
             else {
-                for(int i = 0; i < left_num_1[block_id] - index_1; i++) {
-                    a[block_id][i ] = a[block_id][i+ index_1];
+                for(int i = 0; i < left_num_1[id] - index_1; i++) {
+                    a[id][i ] = a[id][i+ index_1];
                 }
             }
             break;
         }
     }
-    left_num_1[block_id] -= index_1;
-    left_num_2[block_id] -= index_2;
-    dest_num[block_id] = index_3;
+    printf(" index_1: %llu, index_2: %llu, index_3: %llu \n",index_1,index_2,index_3);
+    // //std::cout<<"index1 : "<<index_1 << " index2: "<<index_2<<std::endl;
+    left_num_1[id] -= index_1;
+    left_num_2[id] -= index_2;
+    dest_num[id] = index_3;
 }
 
 void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned long long thread_num, unsigned long long * partitial_index1,unsigned long long * partitial_index2,unsigned long long * partitial_num1 ,unsigned long long * partitial_num2 ,unsigned long long partitial_num,unsigned long long offset1,unsigned long long offset2,unsigned long long offset3 ) {
@@ -223,28 +233,29 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
     for(int i = 0; i <  partitial_num; i++) {
         p_destbuffer[i] = (int*)malloc(2*fetch_num * sizeof(int));
     }
-    int * left_num_1 = (int*)malloc(partitial_num * sizeof(int));
+    unsigned long long * left_num_1 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     for(int i = 0; i < partitial_num; i++) {
         left_num_1[i] = partitial_num1[i];
     }
-    int * left_num_2 = (int*)malloc(partitial_num * sizeof(int));
+    unsigned long long * left_num_2 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     for(int i = 0; i < partitial_num; i++) {
         left_num_2[i] = partitial_num2[i];
     }
-    int * tmpbuffer1_left = (int*)malloc(partitial_num * sizeof(int));
+    unsigned long long * tmpbuffer1_left = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     for(int i = 0; i < partitial_num; i++) {
         tmpbuffer1_left[i] = 0;
     }
-    int * tmpbuffer2_left = (int*)malloc(partitial_num * sizeof(int));
+    unsigned long long * tmpbuffer2_left = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     for(int i = 0; i < partitial_num; i++) {
         tmpbuffer2_left[i] = 0;
     }
-    int * destbuffer_num = (int*)malloc(partitial_num * sizeof(int));
+    unsigned long long * destbuffer_num = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     for(int i = 0; ; i++) { // merge two block
         std::cout << "********************" << std::endl;
         std::cout<< " parrallel i: "<< i <<std::endl;
         bool flag = false;
         for(int j = 0; j < partitial_num; j++) {
+            std::cout<<" left_num_1["<<j<<"] :"<<left_num_1[j]<<" left_num_2["<<j<<"] :"<<left_num_2[j]<<" tmpbuffer1_left["<<j<<"] :"<<tmpbuffer1_left[j]<<"  tmpbuffer2_left["<<j<<"] :"<< tmpbuffer2_left[j]<<std::endl;
             if(left_num_1[j] > 0 || left_num_2[j] > 0 || tmpbuffer1_left[j] > 0 || tmpbuffer2_left[j] > 0) {
                 flag = true;
             }
@@ -270,42 +281,76 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         }
         //* phase 2: use gpu kernels parallel merge data in memory and move the unsorted data from back to front
         std:: cout<< " phase 2 "<<std::endl;
-        int** devPtr1 = (int**)malloc(partitial_num* sizeof(int*));
-        int** devPtr2  = (int**)malloc(partitial_num* sizeof(int*));
-        int** devPtr3  = (int**)malloc(partitial_num* sizeof(int*));
-        for(int j = 0; j < partitial_num; j++) {
-            std::cout << j << std::endl;
-            cudaMalloc(&devPtr1[j], fetch_num * sizeof(int));
-            cudaMalloc(&devPtr2[j], fetch_num * sizeof(int));
-            cudaMalloc(&devPtr3[j], 2*fetch_num * sizeof(int));
-            std::cout << " cumemcpy 1"<< std::endl;
-            cudaMemcpy(devPtr1[j], p_tmpbuffer1[j], fetch_num * sizeof(int), cudaMemcpyHostToDevice);
-            std::cout << " cumemcpy 2"<< std::endl;
-            cudaMemcpy(devPtr2[j], p_tmpbuffer2[j], fetch_num * sizeof(int), cudaMemcpyHostToDevice);
-        }
-        std::cout << " point "<< std::endl;
-        int* devPtr4;
-        int* devPtr5;
-        int* devPtr6;
-        cudaMalloc(&devPtr4, partitial_num * sizeof(int));
-        cudaMalloc(&devPtr5, partitial_num * sizeof(int));
-        cudaMalloc(&devPtr6, partitial_num * sizeof(int));
-        cudaMemcpy(devPtr4, left_num_1, partitial_num * sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(devPtr5, left_num_2, partitial_num * sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(devPtr6, destbuffer_num, partitial_num * sizeof(int), cudaMemcpyHostToDevice);
-        std:;cout << " kernel start " << std::endl;
-        merge_kernel<<<partitial_num, fetch_num>>>(devPtr1, devPtr2, devPtr3, devPtr4, devPtr5, devPtr6);
-
-        std:: cout << " kernel complete "<< std::endl;
-        for(int j = 0; j < partitial_num; j++) {
-            cudaMemcpy(p_tmpbuffer1[j], devPtr1[j], fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
-            cudaMemcpy(p_tmpbuffer2[j], devPtr2[j], fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
-            cudaMemcpy(p_destbuffer[j], devPtr3[j], 2*fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
-            cudaFree(devPtr1[j]);
-            cudaFree(devPtr2[j]);
-            cudaFree(devPtr3[j]);
-        }
+        int** devPtr1 ,** tmp_devPtr1;
+        int** devPtr2 ,** tmp_devPtr2;
+        int** devPtr3 ,** tmp_devPtr3;
+        tmp_devPtr1 = (int**)malloc(sizeof(int*)*partitial_num);
+        tmp_devPtr2 = (int**)malloc(sizeof(int*)*partitial_num);
+        tmp_devPtr3 = (int**)malloc(sizeof(int*)*partitial_num);
+        cudaMalloc(&devPtr1, sizeof(int*) * partitial_num);
+        cudaMalloc(&devPtr2, sizeof(int*) * partitial_num);
+        cudaMalloc(&devPtr3, sizeof(int*) * partitial_num);
+        cudaError_t err1 ;
         
+        for(int j = 0; j < partitial_num; j++) {
+            //std::cout << j << std::endl;
+            cudaMalloc(&tmp_devPtr1[j], fetch_num * sizeof(int));
+            cudaMalloc(&tmp_devPtr2[j], fetch_num * sizeof(int));
+            cudaMalloc(&tmp_devPtr3[j], 2*fetch_num * sizeof(int));
+            //std::cout << " cumemcpy 1"<< std::endl;
+            cudaMemcpy(tmp_devPtr1[j], p_tmpbuffer1[j], fetch_num * sizeof(int), cudaMemcpyHostToDevice);
+            
+            // err1 = cudaGetLastError();
+            // std::cout << "cuda error : "<< err1<<std::endl;
+            //std::cout << " cumemcpy 2"<< std::endl;
+            cudaMemcpy(tmp_devPtr2[j], p_tmpbuffer2[j], fetch_num * sizeof(int), cudaMemcpyHostToDevice);
+            // err1 = cudaGetLastError();
+            // std::cout << "cuda error : "<< err1<<std::endl;
+        }
+        cudaMemcpy(devPtr1, tmp_devPtr1, sizeof(int*) * partitial_num, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr2, tmp_devPtr2, sizeof(int*) * partitial_num, cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr3, tmp_devPtr3, sizeof(int*) * partitial_num, cudaMemcpyHostToDevice);
+        std::cout << " point "<< std::endl;
+        unsigned long long* devPtr4;
+        unsigned long long* devPtr5;
+        unsigned long long* devPtr6;
+        cudaMalloc(&devPtr4, partitial_num * sizeof(unsigned long long));
+        cudaMalloc(&devPtr5, partitial_num * sizeof(unsigned long long));
+        cudaMalloc(&devPtr6, partitial_num * sizeof(unsigned long long));
+        cudaMemcpy(devPtr4, tmpbuffer1_left, partitial_num * sizeof(unsigned long long), cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr5, tmpbuffer2_left, partitial_num * sizeof(unsigned long long), cudaMemcpyHostToDevice);
+        cudaMemcpy(devPtr6, destbuffer_num, partitial_num * sizeof(unsigned long long), cudaMemcpyHostToDevice);
+        std::cout<< "partitial_num :  "<< partitial_num<< " fetch_num : "<< fetch_num << std::endl;
+        std::cout << " kernel start " << std::endl;
+        merge_kernel<<<partitial_num/32, 32>>>(devPtr1, devPtr2, devPtr3, devPtr4, devPtr5, devPtr6);
+        cudaError_t err = cudaGetLastError();
+        cudaDeviceSynchronize();
+        std::cout << "cuda error : "<< err<<std::endl;
+        std:: cout << " kernel complete "<< std::endl;
+        
+        for(int j = 0; j < partitial_num; j++) {
+            //cudaMemcpy(p_tmpbuffer1[j], devPtr1[j], fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
+            //cudaMemcpy(p_tmpbuffer2[j], devPtr2[j], fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
+            cudaMemcpy(p_destbuffer[j], tmp_devPtr3[j], 2*fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
+            cudaFree(tmp_devPtr1[j]);
+            cudaFree(tmp_devPtr2[j]);
+            cudaFree(tmp_devPtr3[j]);
+        }
+        cudaMemcpy(tmpbuffer1_left, devPtr4, partitial_num * sizeof(unsigned long long), cudaMemcpyDeviceToHost);
+        cudaMemcpy(tmpbuffer2_left, devPtr5, partitial_num * sizeof(unsigned long long), cudaMemcpyDeviceToHost);
+        cudaMemcpy(destbuffer_num, devPtr6, partitial_num * sizeof(unsigned long long), cudaMemcpyDeviceToHost);
+        cudaFree(devPtr4);
+        cudaFree(devPtr5);
+        cudaFree(devPtr6);
+        cudaFree(devPtr1);
+        cudaFree(devPtr2);
+        cudaFree(devPtr3);
+        free(tmp_devPtr1);
+        free(tmp_devPtr2);
+        free(tmp_devPtr3);
+        for(int j = 0; j < partitial_num; j++) {
+            std::cout<<" left_num_1["<<j<<"] :"<<left_num_1[j]<<" left_num_2["<<j<<"] :"<<left_num_2[j]<<" tmpbuffer1_left["<<j<<"] :"<<tmpbuffer1_left[j]<<"  tmpbuffer2_left["<<j<<"] :"<< tmpbuffer2_left[j]<<std::endl;
+        }
         
         std::cout << " phase 3 " <<std::endl;
         //* phase 3: write data to output file 
@@ -315,6 +360,7 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
                 partitial_index1[j] += destbuffer_num[j];
             }
         }
+        getchar();
     }
 
 }
@@ -345,7 +391,7 @@ void merge_two(int in, int out, int block_size, int thread_num, unsigned long lo
     // std::cout<< "partitial_num : " << partitial_num <<std::endl;
     // for(int i=0;i<partitial_num;i++)
     // {
-    //     std::cout << " partitial_index1["<<i<<"]: "<<partitial_index1[i]<<"  num: "<<partitial_num1[i]<<std::endl;
+    //     std::cout << " partitial_index2["<<i<<"]: "<<partitial_index2[i]<<"  num: "<<partitial_num2[i]<<std::endl;
     // }
     // std::cout<<"=================================="<<std::endl;
     // for(int i=0;i<partitial_num;i++)
