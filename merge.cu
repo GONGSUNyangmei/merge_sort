@@ -184,6 +184,23 @@ void merge_kernel(int** a, int** b, int** c, unsigned long long* left_num_1, uns
     unsigned long long index_2 =0;
     unsigned long long index_3 =0;
     while(1){
+        if(left_num_1[id] == 0 && left_num_2[id] == 0 ){
+                break;
+            }else if(left_num_1[id] == 0){
+                while(index_2 < left_num_2[id]){
+                    c[id][index_3] = b[id][index_2];
+                    index_2++;
+                    index_3++;
+                }
+                break;
+            }else if(left_num_2[id] == 0){
+                while(index_1 < left_num_1[id]){
+                    c[id][index_3] = a[id][index_1];
+                    index_1++;
+                    index_3++;
+                }
+                break;
+        }
         if(a[id][index_1] <= b[id][index_2]) {
             c[id][index_3] = a[id][index_1];
             // printf("a[%d][%llu]  = %d \n ",id,index_1,a[id][index_1]);
@@ -199,6 +216,8 @@ void merge_kernel(int** a, int** b, int** c, unsigned long long* left_num_1, uns
         //* judge when to escape : if a or b is empty
         if(index_1 == left_num_1[id]  || index_2 == left_num_2[id]  ) {
             //* move the rest of the data to the front
+            
+
             if(index_1 == left_num_1[id]) {
                 for(int i = 0; i < left_num_2[id] - index_2; i++) {
                     b[id][i] = b[id][i+ index_2];
@@ -290,7 +309,7 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         cudaMalloc(&devPtr1, sizeof(int*) * partitial_num);
         cudaMalloc(&devPtr2, sizeof(int*) * partitial_num);
         cudaMalloc(&devPtr3, sizeof(int*) * partitial_num);
-        cudaError_t err1 ;
+        //cudaError_t err1 ;
         
         for(int j = 0; j < partitial_num; j++) {
             //std::cout << j << std::endl;
@@ -356,13 +375,25 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         //* phase 3: write data to output file 
         for(int j = 0; j < partitial_num; j++) {
             if(destbuffer_num[j] > 0) {
-                pwrite(out, p_destbuffer[j], destbuffer_num[j] * sizeof(int), offset3 + partitial_index1[j] * sizeof(int));
+                write_disk(out, p_destbuffer[j], destbuffer_num[j] * sizeof(int), offset3 + partitial_index1[j] * sizeof(int));
                 partitial_index1[j] += destbuffer_num[j];
             }
         }
-        getchar();
-    }
 
+    }
+    for(int i = 0; i < partitial_num; i++) {
+        free(p_tmpbuffer1[i]);
+        free(p_tmpbuffer2[i]);
+        free(p_destbuffer[i]);
+    }
+    free(p_tmpbuffer1);
+    free(p_tmpbuffer2);
+    free(p_destbuffer);
+    free(left_num_1);
+    free(left_num_2);
+    free(tmpbuffer1_left);
+    free(tmpbuffer2_left);
+    free(destbuffer_num);
 }
 
 void merge_two(int in, int out, int block_size, int thread_num, unsigned long long offset1, unsigned long long offset2,unsigned long long offset3, unsigned long long entry_num1, unsigned long long entry_num2) {
