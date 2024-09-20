@@ -238,7 +238,7 @@ void merge_kernel(int** a, int** b, int** c, unsigned long long* left_num_1, uns
     dest_num[id] = index_3;
 }
 
-void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned long long thread_num, unsigned long long * partitial_index1,unsigned long long * partitial_index2,unsigned long long * partitial_num1 ,unsigned long long * partitial_num2 ,unsigned long long partitial_num,unsigned long long offset1,unsigned long long offset2,unsigned long long offset3 ) {
+void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned long long thread_num, unsigned long long * partitial_index1,unsigned long long * partitial_index2,unsigned long long * partitial_num1 ,unsigned long long * partitial_num2 ,unsigned long long partitial_num,unsigned long long offset1,unsigned long long offset2,unsigned long long offset3,unsigned long long * dest_index,unsigned long long * dest_num ) {
     int ** p_tmpbuffer1 = (int**)malloc(partitial_num * sizeof(int*));
     for(int i = 0; i < partitial_num; i++) {
         p_tmpbuffer1[i] = (int*)malloc(fetch_num * sizeof(int));
@@ -269,6 +269,13 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         tmpbuffer2_left[i] = 0;
     }
     unsigned long long * destbuffer_num = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long * read_offset1 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long * read_offset2 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long * write_offset3 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    for(int i = 0; i < partitial_num; i++) {
+        read_offset1[i]= partitial_index1[i];
+        read_offset2[i]= partitial_index2[i];
+    }
     for(int i = 0; ; i++) { // merge two block
         std::cout << "********************" << std::endl;
         std::cout<< " parrallel i: "<< i <<std::endl;
@@ -287,13 +294,13 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         for(int j = 0; j < partitial_num; j++) {
             if(left_num_1[j] > 0 && tmpbuffer1_left[j] == 0) {
                 int read_num = (left_num_1[j] > fetch_num) ? fetch_num : left_num_1[j];
-                pread(in, p_tmpbuffer1[j], read_num * sizeof(int), offset1 + partitial_index1[j] * sizeof(int));
+                read_offset1[j]+=pread(in, p_tmpbuffer1[j], read_num * sizeof(int), offset1 + read_offset1[j] * sizeof(int));
                 left_num_1[j] -= read_num;
                 tmpbuffer1_left[j] = read_num;
             }
             if(left_num_2[j] > 0 && tmpbuffer2_left[j] == 0) {
                 int read_num = (left_num_2[j] > fetch_num) ? fetch_num : left_num_2[j];
-                pread(in, p_tmpbuffer2[j], read_num * sizeof(int), offset2 + partitial_index2[j] * sizeof(int));
+                read_offset2[j]+=pread(in, p_tmpbuffer2[j], read_num * sizeof(int), offset2 + read_offset2[j] * sizeof(int));
                 left_num_2[j] -= read_num;
                 tmpbuffer2_left[j] = read_num;
             }
@@ -375,8 +382,9 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         //* phase 3: write data to output file 
         for(int j = 0; j < partitial_num; j++) {
             if(destbuffer_num[j] > 0) {
-                write_disk(out, p_destbuffer[j], destbuffer_num[j] * sizeof(int), offset3 + partitial_index1[j] * sizeof(int));
-                partitial_index1[j] += destbuffer_num[j];
+                write_disk(out, p_destbuffer[j], destbuffer_num[j] * sizeof(int), offset3 + dest_index[j] * sizeof(int));
+                dest_index[j] += destbuffer_num[j];
+                //partitial_index1[j] += destbuffer_num[j];
             }
         }
 
@@ -406,8 +414,10 @@ void merge_two(int in, int out, int block_size, int thread_num, unsigned long lo
     int* partitial_value = (int*)malloc(partitial_num * sizeof(int));
     unsigned long long* partitial_index1 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     unsigned long long* partitial_index2 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long* partitial_index3 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     unsigned long long* partitial_num1 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     unsigned long long* partitial_num2 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
+    unsigned long long* partitial_num3 = (unsigned long long*)malloc(partitial_num * sizeof(unsigned long long));
     for(unsigned long long i = 0; i < partitial_num; i++) {
         partitial_index1[i] = i * entry_num1 / partitial_num;
         partitial_value[i] = 0;
@@ -419,6 +429,14 @@ void merge_two(int in, int out, int block_size, int thread_num, unsigned long lo
     }
     // find partitial index in b
     binary_find_partition_index(in, partitial_num, partitial_value, offset2, entry_num2, partitial_index2, partitial_num2);
+    for(unsigned long long i = 0; i < partitial_num; i++) {
+        partitial_num3[i]= partitial_num1[i] + partitial_num2[i];
+        if(i == 0){
+            partitial_index3[i] =0;
+        }else{
+            partitial_index3[i] = partitial_index3[i-1] + partitial_num3[i-1];
+        }
+    }
     // std::cout<< "partitial_num : " << partitial_num <<std::endl;
     // for(int i=0;i<partitial_num;i++)
     // {
@@ -430,7 +448,7 @@ void merge_two(int in, int out, int block_size, int thread_num, unsigned long lo
     //     std::cout << " partitial_index1["<<i<<"]: "<<partitial_index1[i]<<" partitial_index2["<<i<<"]: "<<partitial_index2[i]<<"  num: "<<(int)(partitial_index2[i]-partitial_index1[i])<<std::endl;
     // }
     unsigned long long fetch_num = 16UL*1024*1024;
-    parallel_merge(in,out,fetch_num,thread_num,partitial_index1, partitial_index2, partitial_num1 , partitial_num2 , partitial_num,offset1,offset2,offset3 );
+    parallel_merge(in,out,fetch_num,thread_num,partitial_index1, partitial_index2, partitial_num1 , partitial_num2 , partitial_num,offset1,offset2,offset3,partitial_index3, partitial_num3);
     
 
 }
@@ -527,5 +545,7 @@ int main(void)
     merge_main(s1,s2,4UL*1024*1024*1024,2UL*1024*1024*1024,128);
     int fd = open(s1.c_str(), O_RDWR, 0);
     check_result(fd,4UL*1024*1024*1024);
+    int fd2 = open(s2.c_str(), O_RDWR, 0);
+    check_result(fd2,4UL*1024*1024*1024);
     return 0;
 }
