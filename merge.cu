@@ -4,8 +4,49 @@
 #include <string>
 #include <fcntl.h>
 #include <random>
+#include <chrono>
+#include <thread>
+#include <cstdint>
+#include<ctime>
 
 using namespace std;
+
+
+__inline__ uint64_t get_tsc()
+{
+    uint64_t a, d;
+    __asm__ volatile("rdtsc" : "=a"(a), "=d"(d));
+    return (d << 32) | a;
+}
+ 
+__inline__ uint64_t get_tscp(void)
+{
+  uint32_t lo, hi;
+  // take time stamp counter, rdtscp does serialize by itself, and is much cheaper than using CPUID
+  __asm__ __volatile__ (
+      "rdtscp" : "=a"(lo), "=d"(hi)
+      );
+  return ((uint64_t)lo) | (((uint64_t)hi) << 32);
+}
+
+__inline__ uint64_t cycles_2_ns(uint64_t cycles, uint64_t hz)
+{
+  return cycles * (1000000000.0 / hz);
+}
+
+uint64_t get_cpu_freq()
+{
+    FILE *fp=popen("lscpu | grep CPU | grep MHz | awk  {'print $3'}","r");
+    if(fp == nullptr)
+        return 0;
+ 
+    char cpu_mhz_str[200] = { 0 };
+    fgets(cpu_mhz_str,80,fp);
+    fclose(fp);
+ 
+    return atof(cpu_mhz_str) * 1000 * 1000;
+
+}
 
 unsigned long long write_disk(int in, void* tmp_buffer , unsigned long long size , unsigned long long file_offset)
 {
@@ -176,8 +217,8 @@ void merge_kernel(int** a, int** b, int** c, unsigned long long* left_num_1, uns
     const int bid = blockIdx.x;
     const int tid = threadIdx.x;
     int id = bid*32+tid;
-    printf("Hello World from block %d and thread %d!\n", bid, tid);
-    printf("left_num_1 : %llu , left_num_2 : %llu \n",left_num_1[id],left_num_2[id]);
+    //printf("Hello World from block %d and thread %d!\n", bid, tid);
+    //printf("left_num_1 : %llu , left_num_2 : %llu \n",left_num_1[id],left_num_2[id]);
     // int block_id = blockIdx.x; //todo need to be checked
     // //int start_offset = blockIdx.x * blockDim.x + threadIdx.x;  //todo need to be checked
     unsigned long long index_1 =0;
@@ -231,7 +272,7 @@ void merge_kernel(int** a, int** b, int** c, unsigned long long* left_num_1, uns
             break;
         }
     }
-    printf(" index_1: %llu, index_2: %llu, index_3: %llu \n",index_1,index_2,index_3);
+    //printf(" index_1: %llu, index_2: %llu, index_3: %llu \n",index_1,index_2,index_3);
     // //std::cout<<"index1 : "<<index_1 << " index2: "<<index_2<<std::endl;
     left_num_1[id] -= index_1;
     left_num_2[id] -= index_2;
@@ -277,11 +318,11 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         read_offset2[i]= partitial_index2[i];
     }
     for(int i = 0; ; i++) { // merge two block
-        std::cout << "********************" << std::endl;
-        std::cout<< " parrallel i: "<< i <<std::endl;
+        //std::cout << "********************" << std::endl;
+        //std::cout<< " parrallel i: "<< i <<std::endl;
         bool flag = false;
         for(int j = 0; j < partitial_num; j++) {
-            std::cout<<" left_num_1["<<j<<"] :"<<left_num_1[j]<<" left_num_2["<<j<<"] :"<<left_num_2[j]<<" tmpbuffer1_left["<<j<<"] :"<<tmpbuffer1_left[j]<<"  tmpbuffer2_left["<<j<<"] :"<< tmpbuffer2_left[j]<<std::endl;
+            //std::cout<<" left_num_1["<<j<<"] :"<<left_num_1[j]<<" left_num_2["<<j<<"] :"<<left_num_2[j]<<" tmpbuffer1_left["<<j<<"] :"<<tmpbuffer1_left[j]<<"  tmpbuffer2_left["<<j<<"] :"<< tmpbuffer2_left[j]<<std::endl;
             if(left_num_1[j] > 0 || left_num_2[j] > 0 || tmpbuffer1_left[j] > 0 || tmpbuffer2_left[j] > 0) {
                 flag = true;
             }
@@ -290,7 +331,7 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
             break;
         }
         //* phase 1: read data from input file to each tmp buffer
-        std:: cout <<  " pahse 1 "<< std::endl;
+        //std:: cout <<  " pahse 1 "<< std::endl;
         for(int j = 0; j < partitial_num; j++) {
             if(left_num_1[j] > 0 && tmpbuffer1_left[j] == 0) {
                 int read_num = (left_num_1[j] > fetch_num) ? fetch_num : left_num_1[j];
@@ -306,7 +347,7 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
             }
         }
         //* phase 2: use gpu kernels parallel merge data in memory and move the unsorted data from back to front
-        std:: cout<< " phase 2 "<<std::endl;
+        //std:: cout<< " phase 2 "<<std::endl;
         int** devPtr1 ,** tmp_devPtr1;
         int** devPtr2 ,** tmp_devPtr2;
         int** devPtr3 ,** tmp_devPtr3;
@@ -336,7 +377,7 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         cudaMemcpy(devPtr1, tmp_devPtr1, sizeof(int*) * partitial_num, cudaMemcpyHostToDevice);
         cudaMemcpy(devPtr2, tmp_devPtr2, sizeof(int*) * partitial_num, cudaMemcpyHostToDevice);
         cudaMemcpy(devPtr3, tmp_devPtr3, sizeof(int*) * partitial_num, cudaMemcpyHostToDevice);
-        std::cout << " point "<< std::endl;
+        //std::cout << " point "<< std::endl;
         unsigned long long* devPtr4;
         unsigned long long* devPtr5;
         unsigned long long* devPtr6;
@@ -346,13 +387,13 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         cudaMemcpy(devPtr4, tmpbuffer1_left, partitial_num * sizeof(unsigned long long), cudaMemcpyHostToDevice);
         cudaMemcpy(devPtr5, tmpbuffer2_left, partitial_num * sizeof(unsigned long long), cudaMemcpyHostToDevice);
         cudaMemcpy(devPtr6, destbuffer_num, partitial_num * sizeof(unsigned long long), cudaMemcpyHostToDevice);
-        std::cout<< "partitial_num :  "<< partitial_num<< " fetch_num : "<< fetch_num << std::endl;
-        std::cout << " kernel start " << std::endl;
+        //std::cout<< "partitial_num :  "<< partitial_num<< " fetch_num : "<< fetch_num << std::endl;
+        //std::cout << " kernel start " << std::endl;
         merge_kernel<<<partitial_num/32, 32>>>(devPtr1, devPtr2, devPtr3, devPtr4, devPtr5, devPtr6);
         cudaError_t err = cudaGetLastError();
         cudaDeviceSynchronize();
-        std::cout << "cuda error : "<< err<<std::endl;
-        std:: cout << " kernel complete "<< std::endl;
+        //std::cout << "cuda error : "<< err<<std::endl;
+        //std:: cout << " kernel complete "<< std::endl;
         
         for(int j = 0; j < partitial_num; j++) {
             //cudaMemcpy(p_tmpbuffer1[j], devPtr1[j], fetch_num * sizeof(int), cudaMemcpyDeviceToHost);
@@ -374,11 +415,11 @@ void parallel_merge(int in, int  out, unsigned long long fetch_num, unsigned lon
         free(tmp_devPtr1);
         free(tmp_devPtr2);
         free(tmp_devPtr3);
-        for(int j = 0; j < partitial_num; j++) {
-            std::cout<<" left_num_1["<<j<<"] :"<<left_num_1[j]<<" left_num_2["<<j<<"] :"<<left_num_2[j]<<" tmpbuffer1_left["<<j<<"] :"<<tmpbuffer1_left[j]<<"  tmpbuffer2_left["<<j<<"] :"<< tmpbuffer2_left[j]<<std::endl;
-        }
+        // for(int j = 0; j < partitial_num; j++) {
+        //     std::cout<<" left_num_1["<<j<<"] :"<<left_num_1[j]<<" left_num_2["<<j<<"] :"<<left_num_2[j]<<" tmpbuffer1_left["<<j<<"] :"<<tmpbuffer1_left[j]<<"  tmpbuffer2_left["<<j<<"] :"<< tmpbuffer2_left[j]<<std::endl;
+        // }
         
-        std::cout << " phase 3 " <<std::endl;
+        //std::cout << " phase 3 " <<std::endl;
         //* phase 3: write data to output file 
         for(int j = 0; j < partitial_num; j++) {
             if(destbuffer_num[j] > 0) {
@@ -490,8 +531,8 @@ int merge_main(string fpath1, string fpath2, unsigned long long entry_num, unsig
     for(int i = 0; i < block_num -1; i++) {
         offset_info_even[i] = i * block_size * sizeof(int);
         entrynum_info_even[i] = block_size;
-        std::cout<< "offset_info_even [" <<i<<"] : "<<offset_info_even[i]<< std::endl;
-        std::cout<< "entrynum_info_even [" <<i<<"] : "<<entrynum_info_even[i]<< std::endl;
+        // std::cout<< "offset_info_even [" <<i<<"] : "<<offset_info_even[i]<< std::endl;
+        // std::cout<< "entrynum_info_even [" <<i<<"] : "<<entrynum_info_even[i]<< std::endl;
     }
     offset_info_even[block_num - 1] = (block_num - 1) * block_size * sizeof(int);
     entrynum_info_even[block_num - 1] = entry_num - (block_num - 1) * block_size;
@@ -542,10 +583,15 @@ int main(void)
 {
     string s1="/home/szy/ssd1/testfile1";
     string s2="/home/szy/ssd1/testfile2";
-    merge_main(s1,s2,4UL*1024*1024*1024,2UL*1024*1024*1024,128);
+    clock_t start,finish;
+    start = clock();
+    merge_main(s1,s2,16UL*1024*1024*1024,2UL*1024*1024*1024,128);
+    finish = clock();
+    double duration = ( double)(finish - start)/ CLOCKS_PER_SEC  ;
+    printf("time cost :  %lf\n",duration);
     int fd = open(s1.c_str(), O_RDWR, 0);
-    check_result(fd,4UL*1024*1024*1024);
+    check_result(fd,16UL*1024*1024*1024);
     int fd2 = open(s2.c_str(), O_RDWR, 0);
-    check_result(fd2,4UL*1024*1024*1024);
+    check_result(fd2,16UL*1024*1024*1024);
     return 0;
 }
